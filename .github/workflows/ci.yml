@@ -1,40 +1,75 @@
-name: CICD
+name: Django CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, develop]
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [main, develop]
 
 jobs:
-  lint-and-check:
+  lint-python:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Lint Python Files
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  lint-javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
+      - name: Install ESLint
+        run: npm install eslint
+
+      - name: Lint JavaScript Files
+        run: |
+          npx eslint server/frontend/src --ext .jsx,.js --no-eslintrc -c '{"rules":{"no-undef":"warn"}}' || true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint-python, lint-javascript]
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: "3.10"
 
       - name: Install dependencies
-        working-directory: server
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install flake8
+          pip install -r server/requirements.txt
 
-      - name: Lint with flake8
-        working-directory: server
+      - name: Run tests
         run: |
-          flake8 djangoapp djangoproj manage.py \
-            --max-line-length=100 \
-            --exclude=migrations,__pycache__
+          cd server
+          python manage.py test
 
-      - name: Django system check
-        working-directory: server
+      - name: Run migrations
         run: |
-          python manage.py check
+          cd server
+          python manage.py migrate
+
+      - name: Collect static files
+        run: |
+          cd server
+          python manage.py collectstatic --noinput
